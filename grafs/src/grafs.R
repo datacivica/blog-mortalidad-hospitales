@@ -1,162 +1,126 @@
 #
 # Author: Georgina Jiménez
-# Maintainers: Georgina Jiménez
+# Maintainers: Georgina Jiménez, OE
 # Copyright:  (c) Data Cívica 2020, GPL v2 or newer
 # -------------------------------------------------
-# git/hospitales_covid/grafs/src/grafs.R
+# blog-mortalidad-hospitales/grafs/src/grafs.R
 
-
-rm(list=ls())
 if(!require(pacman))install.packages("pacman")
-pacman::p_load(tidyverse, extrafont, here, ggrepel, treemapify, viridis)
-extrafont::loadfonts(quiet = T)
+pacman::p_load(tidyverse, here)
 
-files <- list(output_covid = here("/clean-data/output/covid.rds"), 
-              sexo1_s=here("/grafs/output/sexo1.svg"),
-              sexo1_j=here("/grafs/output/sexo1.jpg"),
-              sexo2=here("/grafs/output/sexo2.svg"),
-              paciente_s=here("/grafs/output/paciente.svg"),
-              paciente_j=here("/grafs/output/paciente.jpg"),
-              comorb_s=here("/grafs/output/comorb.svg"),
-              comorb_j=here("/grafs/output/comorb.jpg"),
-              edad1_s=here("/grafs/output/edades1.svg"),
-              edad1_j=here("/grafs/output/edades1.jpg"),
-              msexo_edad_s=here("/grafs/output/msexo_edad.svg"),
-              msexo_edad_j=here("/grafs/output/msexo_edad.jpg"),
-              mpaciente_s=here("/grafs/output/mpaciente.svg"),
-              mpaciente_j=here("/grafs/output/mpaciente.jpg"),
-              mcomorb_s=here("/grafs/output/mcomorb.svg"),
-              mcomorb_j=here("/grafs/output/mcomorb.jpg"),
-              mcomorb1_s=here("/grafs/output/mcomorb1.svg"),
-              mcomorb1_j=here("/grafs/output/mcomorb1.jpg")
-)
-data <- readRDS(files$output_covid) 
+files <- list(input = here("clean-data/output/covid.rds"), 
+              sexo1 = here("grafs/output/sexo1."),
+              paciente = here("grafs/output/paciente."),
+              comorb = here("grafs/output/comorb."),
+              edad1 = here("grafs/output/edades1."),
+              msexo_edad = here("grafs/output/msexo_edad."),
+              mpaciente = here("grafs/output/mpaciente."),
+              mcomorb = here("grafs/output/mcomorb."),
+              mcomorb1 = here("grafs/output/mcomorb1."),
+              theme_setup = here("grafs/src/theme-setup.R")
+              )
 
+source(files$theme_setup)
 
-#### Cosas para gráficas####
-tema <- theme_minimal() +
-  theme(plot.title = element_text(size = 16, family = "Barlow Condensed", hjust = 0.5, face = "bold"),
-        plot.subtitle = element_text(size = 12, family = "Barlow Condensed", hjust = 0.5),
-        plot.caption = element_text(size = 10, family = "Barlow Condensed", hjust = 0, face = "italic"),
-        axis.text = element_text(size = 10, family = "Barlow Condensed", face = "bold"),
-        axis.title = element_text(size = 12, family = "Barlow Condensed"),
-        legend.text = element_text(size = 10, family = "Barlow Condensed", hjust = 0.5),
-        legend.title = element_text(size = 10, family = "Barlow Condensed", hjust = 0.5),
-        strip.text = element_text(size = 12, face = "bold", family = "Barlow Condensed"),
-        legend.position="top")
+covid <- readRDS(files$input) 
 
-
-colores <- c("#0C0A3E", "#7B1E7A", "#B33F62", "#F9564F", "#F3C677", "#0B5D1E")
+# ==== Sexo y tipo de hospital
+covid %>% 
+  group_by(sexo, sector) %>% 
+  summarise(tot_sexo_sector = n()) %>% 
+  ungroup() %>%
+  group_by(sector) %>% 
+  mutate(tot_sector = sum(tot_sexo_sector),
+         pct_sexo_sector = round((tot_sexo_sector/tot_sector)*100, 1)) %>%
+  ungroup() %>% 
+  select(-c(tot_sexo_sector, tot_sector)) %>% 
+  pivot_wider(id_cols = sector, names_from = sexo, values_from = pct_sexo_sector) %>% 
+  mutate(diff = Hombre - Mujer, 
+         sector = fct_reorder(sector, diff)) %>%
+  select(-diff) %>% 
+  pivot_longer(cols = -sector, names_to = "sexo", values_to = "pct_sexo_sector") %>% 
+  {
+    ggplot(data = ., aes(x = sector, y = pct_sexo_sector, fill = sexo)) +
+      geom_col(position = "dodge") +
+      geom_text(aes(label = paste0(pct_sexo_sector, "%")),
+                position=position_dodge(width=1), size=4, color="black", vjust=-1)+
+      labs(title="¿Qué sexo tienen las personas con COVID19 que atiende cada hospital?",
+           caption="Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx\nActualizada al 24 de octubre de 2020\n*Sólo se consideran casos que ya dieron positivo", 
+           x = "", y = "Porcentaje", fill = "Sexo") +
+      tema +
+      scale_fill_manual(values = pal_6)+
+      ylim(c(0, max(.$pct_sexo_sector)+5))
+  }
   
+walk(devices, ~ ggsave(filename = file.path(paste0(files$sexo1, .x)),
+                       device = .x, width = 16, height = 8))
 
-#### Sexo ####
-tempo <- filter(data, !is.na(sexo) | !is.na(sector))%>%
-  group_by(sexo, sector)%>%
-  summarize(total=n())%>%
-  ungroup()%>%
-  group_by(sector)%>%
-  mutate(den=sum(total, na.rm=T))%>%
-  ungroup()%>%
-  mutate(per=(total/den)*100)%>%
-  na.omit()
+# ==== Tipo de paciente
+covid %>% 
+  group_by(paciente, sector) %>% 
+  summarise(tot_pac_sector = n()) %>% 
+  ungroup() %>% 
+  group_by(sector) %>% 
+  mutate(tot_sector = sum(tot_pac_sector),
+         pct_pac_sector = round((tot_pac_sector/tot_sector)*100, 1)) %>% 
+  ungroup() %>% 
+  select(-c(tot_pac_sector, tot_sector)) %>% 
+  pivot_wider(id_cols = sector, names_from = paciente, values_from = pct_pac_sector) %>% 
+  mutate(sector = fct_reorder(sector, Ambulatorio)) %>% 
+  pivot_longer(cols = -sector, names_to = "paciente", values_to = "pct_pac_sector") %>% 
+  {
+    ggplot(data = ., aes(x = sector, y = pct_pac_sector, fill = fct_rev(paciente))) +
+      geom_col(position="dodge") +
+      geom_text(aes(label=paste0(pct_pac_sector, "%")),
+                position = position_dodge(1), size=4, color="black", hjust=-.2)+
+      labs(title="¿Qué tipo de pacientes atiende cada tipo de hospital?",
+           subtitle="Porcentaje de total de pacientes",
+           caption="Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx\nActualizada al 24 de octubre de 2020\n*Sólo se consideran pacientes que dieron positivo", 
+           x="", y="Porcentaje", fill = "Tipo de paciente") +
+      tema +
+      scale_fill_manual(values = pal_6)+
+      coord_flip()+
+      ylim(c(0,100))
+  }
 
-tempo2 <- select(tempo, sexo,sector, per)%>%
-  pivot_wider(names_from=sexo, values_from=per)%>%
-  mutate(dif=Mujer-Hombre)%>%
-  select(sector, dif)
+walk(devices, ~ ggsave(filename = file.path(paste0(files$paciente, .x)),
+                       device = .x, width = 16, height = 8))
 
-tempo <- left_join(tempo, tempo2, by="sector")
+# ==== Edades
+covid %>% 
+  group_by(sector, grupo_edad) %>% 
+  summarise(tot_age_sector = n()) %>% 
+  ungroup() %>% 
+  group_by(sector) %>% 
+  mutate(tot_sector = sum(tot_age_sector),
+         pct_age_sector = round((tot_age_sector/tot_sector)*100, 1)) %>% 
+  ungroup() %>% 
+  select(-c(tot_age_sector, tot_sector)) %>% 
+  pivot_wider(id_cols = sector, names_from = grupo_edad, values_from = pct_age_sector) %>% 
+  mutate(sector = fct_reorder(sector, -`Más de 60 años`)) %>% 
+  pivot_longer(cols = -sector, names_to = "grupo_edad", values_to = "pct_age_sector") %>% 
+  mutate(grupo_edad = factor(grupo_edad, levels = c("Menores de 18 años",
+                                                    "De 18 a 29 años",
+                                                    "De 30 a 44 años",
+                                                    "De 45 a 60 años",
+                                                    "Más de 60 años"))) %>% 
+  {
+    ggplot(data = ., aes(x = pct_age_sector, y = sector,  fill = fct_rev(grupo_edad))) +
+      geom_col() +
+      geom_text(aes(label=paste0(pct_age_sector, "%")),
+                position=position_stack(vjust=0.5), size=3, color="white")+
+      labs(title="¿Qué edad tienen las personas con COVID19 que atiende cada hospital?",
+           caption="Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx\nActualizada al 24 de octubre de 2020\n*Sólo se consideran pacientes que ya dieron positivo", 
+           x="", y="Porcentaje", fill = "Grupo de edad") +
+      tema +
+      scale_fill_manual(values = pal_6) +
+      guides(fill = guide_legend(reverse = TRUE))
+  }
+  
+walk(devices, ~ ggsave(filename = file.path(paste0(files$edad1, .x)),
+                       device = .x, width = 16, height = 8))
 
-
-ggplot(tempo, aes(x = reorder(sector,-dif), y=per, fill = sexo)) +
-  geom_bar(stat="identity", position="dodge") +
-  geom_text(aes(label=paste0(round(per,1), "%")),
-            position=position_dodge(width=1), size=6, color="black", hjust=.5, vjust=-1.5,
-            family = "Barlow Condensed")+
-  labs(title="¿Qué sexo tienen las personas con COVID19 que atiende cada hospital?",
-       caption="\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 \n *Sólo se consideran casos que ya dieron positivo", 
-       x="\n", y="\n Porcentaje \n", fill = "Sexo") +
-  tema +
-  scale_fill_manual(values = colores)+
-  ylim(c(0,65))
-ggsave(files$sexo1_s, width=16, height=8)
-ggsave(files$sexo1_j, width=16, height=8)
-
-
-
-#### Tipo de paciente ####
-tempo <- group_by(data, paciente, sector)%>%
-  summarize(total=n())%>%
-  ungroup()%>%
-  na.omit()%>%
-  group_by(sector)%>%
-  mutate(den=sum(total, na.rm=T))%>%
-  ungroup()%>%
-  mutate(per=(total/den)*100)%>%
-  mutate(order2=as.numeric(paciente))
-
-tempo2 <- filter(tempo, paciente=="Ambulatorio")%>%
-  arrange(per)%>%
-  mutate(n=1:6)%>%
-  select(sector,n) 
-
-
-tempo <- left_join(tempo, tempo2, by="sector")  
-
-ggplot(tempo, aes(x = reorder(sector, n), y=per, group=-order2, 
-                  fill = paciente)) +
-  geom_bar(stat="identity", position="dodge") +
-  geom_text(aes(label=paste0(round(per,1), "%")),
-            position = position_dodge(1), size=6, color="black", hjust=-.2,
-            family = "Barlow Condensed")+
-  labs(title="¿Qué tipo de pacientes atiende cada tipo de hospital?",
-       subtitle="Porcentaje de total de pacientes",
-       caption="\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 \n *Sólo se consideran pacientes que dieron positivo", 
-       x="\n", y="\n Porcentaje \n", fill = "Tipo de paciente") +
-  tema +
-  scale_fill_manual(values = colores)+
-  coord_flip()+
-  ylim(c(0,100))
-ggsave(files$paciente_s, width=16, height=8)
-ggsave(files$paciente_j, width=16, height=8)
-
-
-#### Edades ####
-tempo <- group_by(data,sector, order_edad, grupo_edad)%>%
-  summarize(total=n())%>%
-  ungroup()%>%
-  na.omit()%>%
-  group_by(sector)%>%
-  mutate(den=sum(total, na.rm=T))%>%
-  ungroup()%>%
-  mutate(per=(total/den)*100)
-
-tempo <- mutate(tempo, order=case_when(
-  sector=="Secretaría de Salud" ~ 1,
-  sector=="Sistema de salud \n estatal" ~ 2,
-  sector=="Hospital privado" ~ 3,
-  sector=="IMSS" ~ 4,
-  sector=="Otros \n (menores al 1%)" ~ 5,
-  sector=="ISSSTE" ~ 6,
-))
-tempo$order <- as.numeric(tempo$order)
-
-ggplot(tempo, aes(x = reorder(sector, -order), y=per, group=-order_edad, 
-                  fill = grupo_edad)) +
-  geom_bar(stat="identity", position="stack") +
-  geom_text(aes(label=paste0(round(per,1), "%")),
-            position = position_stack(1), size=5, color="white",hjust=1,
-            family = "Barlow Condensed")+
-  labs(title="¿Qué edad tienen las personas con COVID19 que atiende cada hospital?",
-       caption="\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 \n *Sólo se consideran pacientes que ya dieron positivo", 
-       x="\n", y="\n Porcentaje \n", fill = "Grupo de edad") +
-  tema +
-  scale_fill_manual(values = colores)+
-  coord_flip()
-ggsave(files$edad1_s, width=16, height=8)
-ggsave(files$edad1_j, width=16, height=8)
-
-### Comorbilidades ####
+# === Comorbilidades
 tempo <- group_by(data, sector, order)%>%
   summarize(obesidad=sum(obesidad, na.rm=T),
             diabetes=sum(diabetes, na.rm=T),
