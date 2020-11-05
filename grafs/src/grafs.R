@@ -260,10 +260,10 @@ walk(devices, ~ ggsave(filename = file.path(paste0(files$mcomorb, .x)),
 
 covid%>%
 group_by(sector, muerto, grupo_edad)%>%
-  summarize(hipertension=sum(hipertension_s, na.rm=T),
-            obesidad=sum(obesidad_s, na.rm=T),
-            tabaquismo=sum(tabaquismo_s, na.rm=T),
-            diabetes=sum(diabetes_s, na.rm=T))%>%
+  summarize(hipertension=sum(hipertension_s==1),
+            obesidad=sum(obesidad_s==1),
+            tabaquismo=sum(tabaquismo_s==1),
+            diabetes=sum(diabetes_s==1))%>%
   na.omit()%>%
   pivot_longer(names_to="enfermedad", values_to="total", cols=4:7)%>%
   group_by(sector, grupo_edad, enfermedad)%>%
