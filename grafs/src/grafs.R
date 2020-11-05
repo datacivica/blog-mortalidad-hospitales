@@ -121,31 +121,29 @@ walk(devices, ~ ggsave(filename = file.path(paste0(files$edad1, .x)),
                        device = .x, width = 16, height = 8))
 
 # === Comorbilidades
-tempo <- group_by(data, sector, order)%>%
-  summarize(obesidad=sum(obesidad, na.rm=T),
-            diabetes=sum(diabetes, na.rm=T),
-            tabaquismo=sum(tabaquismo, na.rm=T),
-            hipertension=sum(hipertension, na.rm=T),
+covid%>%
+  group_by(sector)%>%
+  summarize(obesidad=sum(obesidad==1),
+            diabetes=sum(diabetes==1),
+            tabaquismo=sum(tabaquismo==1),
+            hipertension=sum(hipertension==1),
             total=n())%>%
   na.omit()%>%
-  group_by(sector, order)%>%
-  mutate(obesidad=(obesidad/total)*100,
-         diabetes=(diabetes/total)*100,
-         tabaquismo=(tabaquismo/total)*100,
-         hipertension=(hipertension/total)*100)%>%
   ungroup()%>%
-  gather("enfermedad", "porcentaje",3:6)%>%
+  mutate(obesidad=round((obesidad/total)*100, 1),
+         diabetes=round((diabetes/total)*100,1),
+         tabaquismo=round((tabaquismo/total)*100,1),
+         hipertension=round((hipertension/total)*100, 1))%>%
+  ungroup()%>%
+  pivot_longer(cols = -c(sector, total), names_to = "enfermedad", values_to = "porcentaje")%>%
   mutate(enfermedad=gsub("obesidad", "Obesidad", enfermedad),
          enfermedad=gsub("diabetes", "Diabetes", enfermedad),
          enfermedad=gsub("tabaquismo", "Tabaquismo", enfermedad),
-         enfermedad=gsub("hipertension", "Hipertensión", enfermedad))
-
-
-
-ggplot(tempo, aes(x = sector, y=porcentaje, 
-                  fill = enfermedad)) +
-  geom_bar(stat="identity", position="dodge") +
-  geom_text(aes(label=paste0(round(porcentaje,1), "%")),
+         enfermedad=gsub("hipertension", "Hipertensión", enfermedad))%>%
+  {
+   ggplot(data=., aes(x = sector, y=porcentaje, fill = enfermedad)) +
+   geom_bar(stat="identity", position="dodge") +
+   geom_text(aes(label=paste0(porcentaje, "%")),
             position = position_dodge(1), size=5.5, color="black", hjust=.25, vjust=-1,
             family = "Barlow Condensed")+
   labs(title="¿Qué porcentaje de los pacientes que atiende cada hospital tienen...?",
@@ -153,81 +151,92 @@ ggplot(tempo, aes(x = sector, y=porcentaje,
        caption="\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 \n *Los porcentajes no suman 100% porque una persona puede tener más de una comorbilidad y aquí no aparecen quienes no tienen comorbilidades \n**Sólo se consideran pacientes que ya dieron positivo", 
        x="\n", y="\n Porcentaje \n", fill = "") +
   tema +
-  scale_fill_manual(values = colores)+
-  ylim(c(0,30))
-ggsave(files$comorb_j, width=16, height=8)
-ggsave(files$comorb_s, width=16, height=8)
+  scale_fill_manual(values = pal_6)+
+  ylim(c(0,max(.$porcentaje)+5))
+  }   
+
+
+walk(devices, ~ ggsave(filename = file.path(paste0(files$comorb, .x)),
+                       device = .x, width = 16, height = 8))
 
 
 #### Sexo y edad ####
-tempo <- group_by(data, sector, order, sexo, grupo_edad, muerto)%>%
+  covid%>%
+  group_by(sector, sexo, grupo_edad, muerto)%>%
   summarize(total=n())%>%
   ungroup()%>%
-  group_by(sector, order, sexo, grupo_edad)%>%
+  group_by(sector, sexo, grupo_edad)%>%
   mutate(den=sum(total, na.rm=T))%>%
   ungroup()%>%
-  mutate(per=(total/den)*100)%>%
+  mutate(per=round((total/den)*100, 1))%>%
   na.omit()%>%
   filter(muerto==1)%>%
-  mutate(order_edad=as.numeric(grupo_edad))
-
-ggplot(tempo, aes(x=reorder(sector, order), y=reorder(grupo_edad, -order_edad), fill=per)) +
+  mutate(order_edad=as.numeric(grupo_edad))%>%
+  {   
+  ggplot(data=., aes(x=sector, y=reorder(grupo_edad, -order_edad), fill=per)) +
   geom_tile(color="black") +
   scale_fill_gradient(low="#fffffc", high="#023e8a")+ 
   labs(title="¿Qué porcentaje de las personas que atienden por COVID19 han muerto?", 
        subtitle = "Según su sexo, edad y el tipo de hospital en el que se atendieron",
        caption = "\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 \n*Sólo se consideran pacientes que ya dieron positivo",
        x="", y="", fill="") +
-  geom_text(aes(label=paste0(round(per, 2),"%")), size=5, hjust=.5, vjust=.5, color="black", 
+  geom_text(aes(label=paste0(per, "%")), size=5, hjust=.5, vjust=.5, color="black", 
             family = "Barlow Condensed")+
   tema +
   theme(legend.position = "none") +
   theme(axis.text.x = element_text(angle=0)) +
   scale_x_discrete(position = "top")+
   facet_wrap(~sexo)
-ggsave(files$msexo_edad_s, width=16, height=8)
-ggsave(files$msexo_edad_j, width=16, height=8)
+  }
 
+walk(devices, ~ ggsave(filename = file.path(paste0(files$msexo_edad, .x)),
+                       device = .x, width = 16, height = 8))
 
-#### Tipos de pacientes ####
-tempo <- group_by(data, sector, order, paciente, muerto)%>%
+#================= Tipos de pacientes
+  covid%>%
+  group_by(sector, paciente, muerto)%>%
   summarize(total=n())%>%
   ungroup()%>%
-  group_by(sector, order, paciente)%>%
+  group_by(sector, paciente)%>%
   mutate(den=sum(total, na.rm=T))%>%
   ungroup()%>%
-  mutate(per=(total/den)*100)%>%
+  mutate(per=round((total/den)*100, 1))%>%
   na.omit()%>%
-  filter(muerto==1)
-
-ggplot(tempo, aes(x=reorder(sector, order), y=paciente, fill=per)) +
+  filter(muerto==1)%>%
+  
+  {
+  ggplot(data=., aes(x=sector, y=paciente, fill=per)) +
   geom_tile(color="black") +
   scale_fill_gradient(low="#fffffc", high="#023e8a")+ 
   labs(title="¿Qué porcentaje de las personas que atienden por COVID19 han muerto?", 
        subtitle = "Según el tipo de paciente y el tipo de hospital en el que se atendieron",
        caption = "\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 \n**Sólo se consideran pacientes que ya dieron positivo",
        x="", y="", fill="") +
-  geom_text(aes(label=paste0(round(per, 2),"%")), size=5, hjust=.5, vjust=.5, color="black", 
+  geom_text(aes(label=paste0(per, "%")), size=5, hjust=.5, vjust=.5, color="black", 
             family = "Barlow Condensed")+
   tema +
   theme(legend.position = "none") +
   theme(axis.text.x = element_text(angle=0)) +
   scale_x_discrete(position = "top")
-ggsave(files$mpaciente_s, width=16, height=8)
-ggsave(files$mpaciente_j, width=16, height=8)
+  }
+
+walk(devices, ~ ggsave(filename = file.path(paste0(files$mpaciente, .x)),
+                       device = .x, width = 16, height = 8))
 
 
 ####  Comorbilidades y edad ####
-tempo <- group_by(data, sector, order, muerto, cuatro, m60)%>%
+
+covid%>%
+  group_by(sector, muerto, cuatro_com, m60)%>%
   summarize(total=n())%>%
   na.omit()%>%
-  group_by(sector, order, cuatro, m60)%>%
+  group_by(sector, cuatro_com, m60)%>%
   mutate(den=sum(total, na.rm=T))%>%
   ungroup()%>%
-  mutate(porcentaje=(total/den)*100)%>%
-  filter(muerto==1)
-
-ggplot(tempo, aes(x=reorder(sector, order), y=cuatro, fill=porcentaje)) +
+  mutate(porcentaje=round((total/den)*100, 1))%>%
+  filter(muerto==1)%>%
+{
+ggplot(data=., aes(x=sector, y=cuatro_com, fill=porcentaje)) +
   geom_tile(color="black") +
   scale_fill_gradient(low="#fffffc", high="#023e8a")+ 
   labs(title="¿Qué porcentaje de las personas que atienden por COVID19 han muerto?", 
@@ -242,29 +251,33 @@ ggplot(tempo, aes(x=reorder(sector, order), y=cuatro, fill=porcentaje)) +
   theme(axis.text.x = element_text(angle=0)) +
   scale_x_discrete(position = "top")+
   facet_wrap(~m60)
-ggsave(files$mcomorb_s, width=16, height=8)
-ggsave(files$mcomorb_j, width=16, height=8)
+}
+
+walk(devices, ~ ggsave(filename = file.path(paste0(files$mcomorb, .x)),
+                       device = .x, width = 16, height = 8))
 
 #### Una comorb y distintass edadess ####
-tempo <- group_by(data, sector, order, muerto, grupo_edad)%>%
+
+covid%>%
+group_by(sector, muerto, grupo_edad)%>%
   summarize(hipertension=sum(hipertension_s, na.rm=T),
             obesidad=sum(obesidad_s, na.rm=T),
             tabaquismo=sum(tabaquismo_s, na.rm=T),
             diabetes=sum(diabetes_s, na.rm=T))%>%
   na.omit()%>%
-  pivot_longer(names_to="enfermedad", values_to="total", cols=5:8)%>%
-  group_by(sector, order, grupo_edad, enfermedad)%>%
+  pivot_longer(names_to="enfermedad", values_to="total", cols=4:7)%>%
+  group_by(sector, grupo_edad, enfermedad)%>%
   mutate(den=sum(total, na.rm=T))%>%
   ungroup()%>%
-  mutate(per=(total/den)*100)%>%
+  mutate(per=round((total/den)*100, 1))%>%
   filter(muerto==1)%>%
   filter(grupo_edad!="Menores de 18 años")%>%
   mutate(enfermedad=gsub("hipertension", "Hipertensión", enfermedad),
          enfermedad=gsub("diabetes", "Diabetes", enfermedad),
          enfermedad=gsub("obesidad", "Obesidad", enfermedad),
-         enfermedad=gsub("tabaquismo", "Tabaquismo", enfermedad))
-
-ggplot(tempo, aes(x=reorder(sector, order), y=enfermedad, fill=per)) +
+         enfermedad=gsub("tabaquismo", "Tabaquismo", enfermedad))%>%
+         {
+ggplot(data=., aes(x=sector, y=enfermedad, fill=per)) +
   geom_tile(color="black") +
   scale_fill_gradient(low="#fffffc", high="#023e8a")+ 
   labs(title="¿Qué porcentaje de las personas que atienden por COVID19 han muerto?", 
@@ -272,12 +285,14 @@ ggplot(tempo, aes(x=reorder(sector, order), y=enfermedad, fill=per)) +
        caption = "\n Fuente: Base de datos abiertos sobre casos de COVID en datos.gob.mx \n Actualizada al 24 de octubre de 2020 
        \n *Sólo se consideran personas con una comorbilidad \n**Sólo se consideran pacientes que ya dieron positivo",
        x="", y="", fill="") +
-  geom_text(aes(label=paste0(round(per, 2),"%")), size=5, hjust=.5, vjust=.5,
+  geom_text(aes(label=paste0(per,"%")), size=5, hjust=.5, vjust=.5,
             color="black", 
             family = "Barlow Condensed")+
   tema+
   facet_wrap(~grupo_edad)
-ggsave(files$mcomorb1_s, width=16, height=8)
-ggsave(files$mcomorb1_j, width=16, height=8)
+         }
 
+walk(devices, ~ ggsave(filename = file.path(paste0(files$mcomorb1, .x)),
+                       device = .x, width = 16, height = 8))
 
+#done
